@@ -1,0 +1,11 @@
+venv/
+__pycache__/
+*.pyc
+*.mid
+*.wav
+*.mp3
+*.mp4
+dist/
+build/
+*.spec
+.env
