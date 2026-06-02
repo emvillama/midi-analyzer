@@ -1,7 +1,7 @@
 from backend.transcriber import transcribe
 from backend.analyzer import analyze
 
-notes = transcribe("temp/cVYH-7QGE-A.wav")
+notes = transcribe("temp/clairdelune.wav")
 scores = analyze(notes)
 
 for pattern, score in scores.items():
