@@ -1,5 +1,21 @@
 const API = 'http://127.0.0.1:8000';
 
+// ── mock mode ─────────────────────────────────────────────────────────────────
+// Set to true to test the UI without the backend running.
+// Open index.html directly in a browser and it will use fake data.
+ 
+const MOCK = true;
+ 
+const MOCK_DATA = {
+  download:  { wav_path: 'temp/cVYH-7QGE-A.wav' },
+  transcribe: { notes: Array(2252).fill({ pitch: 60, start: 0, end: 0.5, velocity: 80 }) },
+  analyze:   { scores: { scale_runs: 8.3, arpeggios: 77.9, large_jumps: 100, repeated_notes: 10.4, chord_density: 92.5, hand_independence: 100 } },
+  recommend: { recommendations: ['Hand independence', 'Large jumps / position shifts', 'Chord playing', 'Arpeggios'] },
+};
+ 
+// Simulates network delay so the pipeline steps are visible
+const MOCK_DELAY = { download: 800, transcribe: 1200, analyze: 600, recommend: 400 };
+
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 
 const urlInput      = document.getElementById('url-input');

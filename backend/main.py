@@ -3,7 +3,10 @@ import uvicorn
 import webview
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
+import os
 
 from backend.downloader import download_audio
 from backend.transcriber import transcribe
@@ -22,8 +25,23 @@ app.add_middleware(
 
 PORT = 8000
 
+# Resolve paths relative to this file so they work after PyInstaller bundling
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+TEMPLATES_DIR = os.path.join(BASE_DIR, "frontend", "templates")
+STATIC_DIR    = os.path.join(BASE_DIR, "frontend", "static")
 
-# request models ─────────────────────────────────────────────────────────────
+# Serve frontend/static/ at /static
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+# ── root ───────────────────────────────────────────────────────────────────────
+
+@app.get("/")
+def root():
+    return FileResponse(os.path.join(TEMPLATES_DIR, "index.html"))
+
+
+# ── request models ─────────────────────────────────────────────────────────────
 
 class DownloadRequest(BaseModel):
     url: str
@@ -38,7 +56,7 @@ class RecommendRequest(BaseModel):
     scores: dict[str, float]
 
 
-# endpoints ──────────────────────────────────────────────────────────────────
+# ── endpoints ──────────────────────────────────────────────────────────────────
 
 @app.post("/download")
 def download(req: DownloadRequest):
@@ -78,18 +96,16 @@ def get_recommendations(req: RecommendRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# app launch ─────────────────────────────────────────────────────────────────
+# ── app launch ─────────────────────────────────────────────────────────────────
 
 def start_server():
     uvicorn.run(app, host="127.0.0.1", port=PORT, log_level="warning")
 
 
 def main():
-    # Start FastAPI in a background thread
     server_thread = threading.Thread(target=start_server, daemon=True)
     server_thread.start()
 
-    # Launch pywebview window pointed at the local server
     webview.create_window(
         title="MIDI Analyzer",
         url=f"http://127.0.0.1:{PORT}",
