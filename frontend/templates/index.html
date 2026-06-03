@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MIDI Analyzer</title>
+  <link rel="stylesheet" href="../static/css/style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700&display=swap" rel="stylesheet" />
+</head>
+<body>
+
+  <div class="app">
+
+    <header class="header">
+      <div class="header-logo">
+        <span class="logo-mark">▐</span>
+        <span class="logo-text">midi analyzer</span>
+      </div>
+      <p class="header-sub">paste a youtube url. get a practice plan.</p>
+    </header>
+
+    <main class="main">
+
+      <!-- Input -->
+      <section class="input-section">
+        <div class="url-bar">
+          <span class="url-icon">⌕</span>
+          <input
+            type="text"
+            id="url-input"
+            class="url-input"
+            placeholder="https://youtube.com/watch?v=..."
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <button id="analyze-btn" class="analyze-btn">analyze</button>
+        </div>
+      </section>
+
+      <!-- Pipeline status -->
+      <section class="pipeline-section" id="pipeline-section" style="display:none;">
+        <div class="pipeline">
+          <div class="pipeline-step" id="step-download">
+            <div class="step-indicator">
+              <span class="step-dot"></span>
+            </div>
+            <div class="step-body">
+              <span class="step-label">download</span>
+              <span class="step-detail" id="detail-download">waiting...</span>
+            </div>
+          </div>
+          <div class="pipeline-connector"></div>
+          <div class="pipeline-step" id="step-transcribe">
+            <div class="step-indicator">
+              <span class="step-dot"></span>
+            </div>
+            <div class="step-body">
+              <span class="step-label">transcribe</span>
+              <span class="step-detail" id="detail-transcribe">waiting...</span>
+            </div>
+          </div>
+          <div class="pipeline-connector"></div>
+          <div class="pipeline-step" id="step-analyze">
+            <div class="step-indicator">
+              <span class="step-dot"></span>
+            </div>
+            <div class="step-body">
+              <span class="step-label">analyze</span>
+              <span class="step-detail" id="detail-analyze">waiting...</span>
+            </div>
+          </div>
+          <div class="pipeline-connector"></div>
+          <div class="pipeline-step" id="step-recommend">
+            <div class="step-indicator">
+              <span class="step-dot"></span>
+            </div>
+            <div class="step-body">
+              <span class="step-label">recommend</span>
+              <span class="step-detail" id="detail-recommend">waiting...</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Error -->
+      <section class="error-section" id="error-section" style="display:none;">
+        <div class="error-box">
+          <span class="error-icon">!</span>
+          <span class="error-msg" id="error-msg"></span>
+        </div>
+      </section>
+
+      <!-- Results -->
+      <section class="results-section" id="results-section" style="display:none;">
+        <div class="results-header">
+          <span class="results-label">recommended practice</span>
+        </div>
+        <ul class="rec-list" id="rec-list"></ul>
+        <div class="scores-header">
+          <span class="scores-label">pattern scores</span>
+        </div>
+        <div class="scores-grid" id="scores-grid"></div>
+        <button class="reset-btn" id="reset-btn">analyze another</button>
+      </section>
+
+    </main>
+
+  </div>
+
+  <script src="../static/js/app.js"></script>
+</body>
+</html>
