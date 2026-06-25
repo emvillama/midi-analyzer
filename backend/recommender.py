@@ -19,26 +19,33 @@ LABELS = {
 }
 
 
-def recommend(scores: dict[str, float]) -> list[str]:
+def recommend(scores: dict[str, dict]) -> list[dict]:
     """
     Map pattern scores to a practice recommendation list.
 
     Args:
         scores: Output from analyzer.analyze()
+                e.g. {"scale_runs": {"score": 72.4, "timestamps": [4.2, 18.7]}, ...}
 
     Returns:
-        List of recommendation strings, sorted by score descending.
-        e.g. ["Hand independence", "Chord playing", "Arpeggios"]
+        List of recommendation dicts, sorted by score descending.
+        e.g. [
+            {"label": "Hand independence", "timestamps": [1.2, 8.4]},
+            {"label": "Arpeggios",         "timestamps": [4.2, 18.7]},
+        ]
     """
     recommendations = [
-        LABELS[pattern]
-        for pattern, score in scores.items()
-        if score >= THRESHOLDS.get(pattern, 30.0)
+        {
+            "label":      LABELS[pattern],
+            "timestamps": scores[pattern]["timestamps"],
+        }
+        for pattern, entry in scores.items()
+        if entry["score"] >= THRESHOLDS.get(pattern, 30.0)
     ]
 
-    # Sort by score descending so highest-priority items appear first
-    recommendations.sort(key=lambda label: scores[
-        next(k for k, v in LABELS.items() if v == label)
-    ], reverse=True)
+    recommendations.sort(
+        key=lambda r: scores[next(k for k, v in LABELS.items() if v == r["label"])]["score"],
+        reverse=True,
+    )
 
     return recommendations
