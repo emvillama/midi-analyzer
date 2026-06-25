@@ -37,20 +37,21 @@ def _group_simultaneous(notes: list[dict], tolerance: float = 0.05) -> list[list
 
 # pattern detectors ──────────────────────────────────────────────────────────
 
-def _score_scale_runs(notes: list[dict], tempo: float) -> float:
+def _score_scale_runs(notes: list[dict], tempo: float) -> tuple[float, list[float]]:
     """Stepwise melodic motion: intervals of 1–2 semitones, 4+ consecutive notes."""
     if len(notes) < 4:
-        return 0.0
+        return 0.0, []
 
-    # Use single-note events/melody only (not chords)
     groups = _group_simultaneous(notes)
     melody = [min(g, key=lambda n: n["pitch"]) for g in groups if len(g) == 1]
 
     if len(melody) < 4:
-        return 0.0
+        return 0.0, []
 
     run_lengths = []
+    timestamps = []
     run = 1
+    run_start = melody[0]["start"]
     for i in range(1, len(melody)):
         interval = abs(melody[i]["pitch"] - melody[i-1]["pitch"])
         if 1 <= interval <= 2:
@@ -58,30 +59,35 @@ def _score_scale_runs(notes: list[dict], tempo: float) -> float:
         else:
             if run >= 4:
                 run_lengths.append(run)
+                timestamps.append(round(run_start, 2))
             run = 1
+            run_start = melody[i]["start"]
     if run >= 4:
         run_lengths.append(run)
+        timestamps.append(round(run_start, 2))
 
     if not run_lengths:
-        return 0.0
+        return 0.0, []
 
     total_stepwise = sum(run_lengths)
     ratio = total_stepwise / max(len(melody), 1)
     raw = min(ratio * 150, 100)
-    return min(raw * _tempo_weight(tempo), 100)
+    return min(raw * _tempo_weight(tempo), 100), timestamps
 
 
-def _score_arpeggios(notes: list[dict], tempo: float) -> float:
+def _score_arpeggios(notes: list[dict], tempo: float) -> tuple[float, list[float]]:
     """Broken chord tones: intervals of 3–7 semitones, non-simultaneous, directional."""
     groups = _group_simultaneous(notes)
     melody = [g[0] for g in groups if len(g) == 1]
 
     if len(melody) < 3:
-        return 0.0
+        return 0.0, []
 
     arp_count = 0
+    timestamps = []
     run = 1
     last_dir = None
+    run_start = melody[0]["start"]
     for i in range(1, len(melody)):
         interval = melody[i]["pitch"] - melody[i-1]["pitch"]
         abs_int = abs(interval)
@@ -93,71 +99,81 @@ def _score_arpeggios(notes: list[dict], tempo: float) -> float:
             else:
                 if run >= 3:
                     arp_count += run
+                    timestamps.append(round(run_start, 2))
                 run = 1
                 last_dir = direction
+                run_start = melody[i]["start"]
         else:
             if run >= 3:
                 arp_count += run
+                timestamps.append(round(run_start, 2))
             run = 1
             last_dir = None
+            run_start = melody[i]["start"] if i < len(melody) else run_start
     if run >= 3:
         arp_count += run
+        timestamps.append(round(run_start, 2))
 
     ratio = arp_count / max(len(melody), 1)
     raw = min(ratio * 200, 100)
-    return min(raw * _tempo_weight(tempo), 100)
+    return min(raw * _tempo_weight(tempo), 100), timestamps
 
 
-def _score_large_jumps(notes: list[dict], tempo: float) -> float:
+def _score_large_jumps(notes: list[dict], tempo: float) -> tuple[float, list[float]]:
     """Intervals larger than a minor 6th (8 semitones) between consecutive melody notes."""
     groups = _group_simultaneous(notes)
     melody = [g[0] for g in groups]
 
     if len(melody) < 2:
-        return 0.0
+        return 0.0, []
 
-    jump_count = sum(
-        1 for i in range(1, len(melody))
-        if abs(melody[i]["pitch"] - melody[i-1]["pitch"]) > 8
-    )
+    timestamps = []
+    jump_count = 0
+    for i in range(1, len(melody)):
+        if abs(melody[i]["pitch"] - melody[i-1]["pitch"]) > 8:
+            jump_count += 1
+            timestamps.append(round(melody[i]["start"], 2))
 
     ratio = jump_count / max(len(melody), 1)
     raw = min(ratio * 300, 100)
-    return min(raw * _tempo_weight(tempo), 100)
+    return min(raw * _tempo_weight(tempo), 100), timestamps
 
 
-def _score_repeated_notes(notes: list[dict], tempo: float) -> float:
+def _score_repeated_notes(notes: list[dict], tempo: float) -> tuple[float, list[float]]:
     """Same pitch repeated within a short time window (< 0.5s)."""
     if len(notes) < 2:
-        return 0.0
+        return 0.0, []
 
     sorted_notes = sorted(notes, key=lambda n: n["start"])
-    repeat_count = sum(
-        1 for i in range(1, len(sorted_notes))
-        if sorted_notes[i]["pitch"] == sorted_notes[i-1]["pitch"]
-        and (sorted_notes[i]["start"] - sorted_notes[i-1]["start"]) < 0.5
-    )
+    timestamps = []
+    repeat_count = 0
+    for i in range(1, len(sorted_notes)):
+        if (sorted_notes[i]["pitch"] == sorted_notes[i-1]["pitch"]
+                and (sorted_notes[i]["start"] - sorted_notes[i-1]["start"]) < 0.5):
+            repeat_count += 1
+            timestamps.append(round(sorted_notes[i]["start"], 2))
 
     ratio = repeat_count / max(len(sorted_notes), 1)
     raw = min(ratio * 300, 100)
-    return min(raw * _tempo_weight(tempo), 100)
+    return min(raw * _tempo_weight(tempo), 100), timestamps
 
 
-def _score_chord_density(notes: list[dict], tempo: float) -> float:
+def _score_chord_density(notes: list[dict], tempo: float) -> tuple[float, list[float]]:
     """Average number of simultaneous notes per group."""
     groups = _group_simultaneous(notes)
     if not groups:
-        return 0.0
+        return 0.0, []
 
     chord_groups = [g for g in groups if len(g) >= 3]
+    timestamps = [round(g[0]["start"], 2) for g in chord_groups]
     ratio = len(chord_groups) / max(len(groups), 1)
     raw = min(ratio * 200, 100)
-    return min(raw * _tempo_weight(tempo), 100)
+    return min(raw * _tempo_weight(tempo), 100), timestamps
 
 
-def _score_hand_independence(notes: list[dict], tempo: float) -> float:
+def _score_hand_independence(notes: list[dict], tempo: float) -> tuple[float, list[float]]:
     """
-    Proxy: simultaneous notes spanning a wide pitch range (> 12 semitones = 1 octave),
+    Proxy: simultaneous notes spanning a wide pitch range (> 12 semitones),
     suggesting left and right hand are doing different things.
     """
     groups = _group_simultaneous(notes)
@@ -166,9 +182,10 @@ def _score_hand_independence(notes: list[dict], tempo: float) -> float:
         if len(g) >= 2 and (max(n["pitch"] for n in g) - min(n["pitch"] for n in g)) > 12
     ]
 
+    timestamps = [round(g[0]["start"], 2) for g in wide_groups]
     ratio = len(wide_groups) / max(len(groups), 1)
     raw = min(ratio * 200, 100)
-    return min(raw * _tempo_weight(tempo), 100)
+    return min(raw * _tempo_weight(tempo), 100), timestamps
 
 
 # API ──────────────────────────────────────────────────────────
