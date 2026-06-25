@@ -190,7 +190,7 @@ def _score_hand_independence(notes: list[dict], tempo: float) -> tuple[float, li
 
 # API ──────────────────────────────────────────────────────────
 
-def analyze(notes: list[dict]) -> dict[str, float]:
+def analyze(notes: list[dict]) -> dict[str, dict]:
     """
     Run all pattern detectors on a list of MIDI notes.
 
@@ -198,28 +198,32 @@ def analyze(notes: list[dict]) -> dict[str, float]:
         notes: Output from transcriber.transcribe()
 
     Returns:
-        Dict of pattern scores, each 0–100.
-        e.g. {"scale_runs": 72.4, "arpeggios": 45.1, ...}
+        Dict of pattern results, each containing a score (0–100) and timestamps (seconds).
+        e.g. {"scale_runs": {"score": 72.4, "timestamps": [4.2, 18.7]}, ...}
     """
+    empty = {"score": 0.0, "timestamps": []}
     if not notes:
         return {
-            "scale_runs": 0.0,
-            "arpeggios": 0.0,
-            "large_jumps": 0.0,
-            "repeated_notes": 0.0,
-            "chord_density": 0.0,
-            "hand_independence": 0.0,
+            "scale_runs":        empty,
+            "arpeggios":         empty,
+            "large_jumps":       empty,
+            "repeated_notes":    empty,
+            "chord_density":     empty,
+            "hand_independence": empty,
         }
 
     tempo = _estimate_tempo(notes)
 
-    scores = {
-        "scale_runs":       round(_score_scale_runs(notes, tempo), 1),
-        "arpeggios":        round(_score_arpeggios(notes, tempo), 1),
-        "large_jumps":      round(_score_large_jumps(notes, tempo), 1),
-        "repeated_notes":   round(_score_repeated_notes(notes, tempo), 1),
-        "chord_density":    round(_score_chord_density(notes, tempo), 1),
-        "hand_independence": round(_score_hand_independence(notes, tempo), 1),
-    }
+    results = {}
+    for key, fn in [
+        ("scale_runs",        _score_scale_runs),
+        ("arpeggios",         _score_arpeggios),
+        ("large_jumps",       _score_large_jumps),
+        ("repeated_notes",    _score_repeated_notes),
+        ("chord_density",     _score_chord_density),
+        ("hand_independence", _score_hand_independence),
+    ]:
+        score, timestamps = fn(notes, tempo)
+        results[key] = {"score": round(score, 1), "timestamps": timestamps}
 
-    return scores
+    return results
