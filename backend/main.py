@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 import os
+import sys
 
 from backend.downloader import download_audio
 from backend.transcriber import transcribe
@@ -26,7 +27,12 @@ app.add_middleware(
 PORT = 8000
 
 # Resolve paths relative to this file so they work after PyInstaller bundling
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# otherwise fall back to the project root relative to this file.
+if getattr(sys, "frozen", False):
+    BASE_DIR = sys._MEIPASS
+else:
+    BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 TEMPLATES_DIR = os.path.join(BASE_DIR, "frontend", "templates")
 STATIC_DIR    = os.path.join(BASE_DIR, "frontend", "static")
 
