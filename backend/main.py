@@ -53,7 +53,7 @@ class AnalyzeRequest(BaseModel):
     notes: list[dict]
 
 class RecommendRequest(BaseModel):
-    scores: dict[str, float]
+    scores: dict[str, dict]
 
 
 # ── endpoints ──────────────────────────────────────────────────────────────────
