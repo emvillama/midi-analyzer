@@ -52,6 +52,7 @@ jobs:
             --name "midi-analyzer" `
             --add-data "frontend;frontend" `
             --add-data "backend;backend" `
+            --add-data "bin;." `
             --add-data "${{ env.BASIC_PITCH_DIR }}/saved_models;basic_pitch/saved_models" `
             --hidden-import "uvicorn.logging" `
             --hidden-import "uvicorn.loops" `
