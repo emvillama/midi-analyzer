@@ -26,10 +26,15 @@ def transcribe(wav_path: str) -> list[dict]:
         raise FileNotFoundError(f"Audio file not found: {wav_path}")
 
     # Run basic-pitch transcription
-    model_output, midi_data, note_events = predict(
-        wav_path,
-        ICASSP_2022_MODEL_PATH,
-    )
+    try:
+        model_output, midi_data, note_events = predict(
+            wav_path,
+            ICASSP_2022_MODEL_PATH,
+        )
+    except Exception as e:
+        raise RuntimeError(
+            f"Transcription failed for {wav_path}: {e}"
+        ) from e
 
     # midi_data is a pretty_midi.PrettyMIDI object — extract notes directly
     notes = []
