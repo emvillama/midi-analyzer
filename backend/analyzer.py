@@ -109,7 +109,7 @@ def _score_arpeggios(notes: list[dict], tempo: float) -> tuple[float, list[float
                 timestamps.append(round(run_start, 2))
             run = 1
             last_dir = None
-            run_start = melody[i]["start"] if i < len(melody) else run_start
+            run_start = melody[i]["start"]
     if run >= 3:
         arp_count += run
         timestamps.append(round(run_start, 2))
