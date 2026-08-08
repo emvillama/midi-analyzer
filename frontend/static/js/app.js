@@ -9,8 +9,20 @@ const MOCK = true;
 const MOCK_DATA = {
   download:  { wav_path: 'temp/cVYH-7QGE-A.wav' },
   transcribe: { notes: Array(2252).fill({ pitch: 60, start: 0, end: 0.5, velocity: 80 }) },
-  analyze:   { scores: { scale_runs: 8.3, arpeggios: 77.9, large_jumps: 100, repeated_notes: 10.4, chord_density: 92.5, hand_independence: 100 } },
-  recommend: { recommendations: ['Hand independence', 'Large jumps / position shifts', 'Chord playing', 'Arpeggios'] },
+  analyze:   { scores: {
+    scale_runs:        { score: 8.3,   timestamps: [12.4] },
+    arpeggios:          { score: 77.9,  timestamps: [4.2, 18.7, 41.0] },
+    large_jumps:        { score: 100,   timestamps: [2.1, 9.9, 30.5, 55.2] },
+    repeated_notes:     { score: 10.4,  timestamps: [] },
+    chord_density:       { score: 92.5,  timestamps: [6.0, 22.3, 47.8] },
+    hand_independence:   { score: 100,   timestamps: [1.2, 8.4, 33.6] },
+  } },
+  recommend: { recommendations: [
+    { label: 'Hand independence',              timestamps: [1.2, 8.4, 33.6] },
+    { label: 'Large jumps / position shifts',   timestamps: [2.1, 9.9, 30.5, 55.2] },
+    { label: 'Chord playing',                   timestamps: [6.0, 22.3, 47.8] },
+    { label: 'Arpeggios',                       timestamps: [4.2, 18.7, 41.0] },
+  ] },
 };
  
 // Simulates network delay so the pipeline steps are visible
@@ -96,7 +108,7 @@ function renderResults(recommendations, scores) {
     recommendations.forEach(rec => {
       const li = document.createElement('li');
       li.className = 'rec-item';
-      li.innerHTML = `<span class="rec-bullet"></span><span class="rec-text">${rec}</span>`;
+      li.innerHTML = `<span class="rec-bullet"></span><span class="rec-text">${rec.label}</span>`;
       recList.appendChild(li);
     });
   }
@@ -117,9 +129,9 @@ function renderResults(recommendations, scores) {
     card.innerHTML = `
       <div class="score-name">${labels[key] || key}</div>
       <div class="score-bar-track">
-        <div class="score-bar-fill" style="width: ${val}%"></div>
+        <div class="score-bar-fill" style="width: ${val.score}%"></div>
       </div>
-      <div class="score-value">${Math.round(val)}</div>
+      <div class="score-value">${Math.round(val.score)}</div>
     `;
     scoresGrid.appendChild(card);
   });
