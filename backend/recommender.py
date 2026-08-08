@@ -34,18 +34,18 @@ def recommend(scores: dict[str, dict]) -> list[dict]:
             {"label": "Arpeggios",         "timestamps": [4.2, 18.7]},
         ]
     """
-    recommendations = [
-        {
-            "label":      LABELS[pattern],
-            "timestamps": scores[pattern]["timestamps"],
-        }
+    qualifying = [
+        (pattern, entry)
         for pattern, entry in scores.items()
         if entry["score"] >= THRESHOLDS.get(pattern, 30.0)
     ]
 
-    recommendations.sort(
-        key=lambda r: scores[next(k for k, v in LABELS.items() if v == r["label"])]["score"],
-        reverse=True,
-    )
+    qualifying.sort(key=lambda item: item[1]["score"], reverse=True)
 
-    return recommendations
+    return [
+        {
+            "label":      LABELS[pattern],
+            "timestamps": entry["timestamps"],
+        }
+        for pattern, entry in qualifying
+    ]
