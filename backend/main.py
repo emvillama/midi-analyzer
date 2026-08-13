@@ -47,6 +47,11 @@ def root():
     return FileResponse(os.path.join(TEMPLATES_DIR, "index.html"))
 
 
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
 # ── request models ─────────────────────────────────────────────────────────────
 
 class DownloadRequest(BaseModel):
