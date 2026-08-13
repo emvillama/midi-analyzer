@@ -139,6 +139,19 @@ function renderResults(recommendations, scores) {
   resultsSection.style.display = 'flex';
 }
 
+async function waitForBackend(retries = 5, delayMs = 400) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const res = await fetch(`${API}/health`);
+      if (res.ok) return true;
+    } catch (_) {
+      // backend not up yet, keep retrying
+    }
+    await new Promise(r => setTimeout(r, delayMs));
+  }
+  return false;
+}
+
 // ── main pipeline ─────────────────────────────────────────────────────────────
 
 async function runPipeline(url) {
@@ -148,6 +161,14 @@ async function runPipeline(url) {
   resultsSection.style.display  = 'none';
 
   try {
+    if (!MOCK) {
+      setStep('download', 'active', 'connecting...');
+      const ready = await waitForBackend();
+      if (!ready) {
+        throw new Error('Backend is still starting up. Please try again in a moment.');
+      }
+    }
+
     // 1. Download
     setStep('download', 'active', 'downloading audio...');
     const { wav_path } = await post('download', { url });
