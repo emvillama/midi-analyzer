@@ -194,21 +194,45 @@ def download_audio(url: str) -> str:
         }],
         "quiet": True,
         "extractor_args": {"youtube": {"js_runtimes": ["deno", "node"]}},
+        # Bound retries so a broken JS-runtime/network setup fails fast
+        # with a clear error instead of retrying silently for minutes.
+        "retries": 3,
+        "fragment_retries": 3,
+        "socket_timeout": 20,
+        # A URL can carry a &list=... playlist param even when it's really
+        # a link to one specific video. Without this, yt-dlp defaults to
+        # downloading the entire playlist instead of just that video.
+        "noplaylist": True,
     }
 
     ffmpeg_dir = _get_ffmpeg_dir()
     if ffmpeg_dir:
         ydl_opts["ffmpeg_location"] = ffmpeg_dir
 
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=True)
-        if not info or "id" not in info:
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+    except yt_dlp.utils.DownloadError as e:
+        message = str(e)
+        if "JavaScript runtime" in message or "403" in message:
             raise ValueError(
-                f"Could not extract audio from '{url}'. "
-                "It may be a playlist, private, age-restricted, or otherwise unavailable video."
-            )
-        video_id = info["id"]
-        audio_path = os.path.join(DOWNLOAD_DIR, f"{video_id}.wav")
-        _record_download(video_id, url, audio_path, title=info.get("title"))
+                "Couldn't download audio — YouTube requires yt-dlp to run a "
+                "JavaScript challenge-solver (Deno or Node) that doesn't seem "
+                "to be available. Confirm it's installed and on PATH for this "
+                "process by running: python3 -c \"import shutil; "
+                "print(shutil.which('deno'))\" in the same terminal you launch "
+                "the app from. See https://github.com/yt-dlp/yt-dlp/wiki/EJS "
+                f"for setup details. (Original error: {message})"
+            ) from e
+        raise ValueError(f"Couldn't download audio from '{url}': {message}") from e
+
+    if not info or "id" not in info:
+        raise ValueError(
+            f"Could not extract audio from '{url}'. "
+            "It may be a playlist, private, age-restricted, or otherwise unavailable video."
+        )
+    video_id = info["id"]
+    audio_path = os.path.join(DOWNLOAD_DIR, f"{video_id}.wav")
+    _record_download(video_id, url, audio_path, title=info.get("title"))
 
     return audio_path
