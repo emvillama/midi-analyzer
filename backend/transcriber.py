@@ -36,15 +36,18 @@ def transcribe(wav_path: str) -> list[dict]:
             f"Transcription failed for {wav_path}: {e}"
         ) from e
 
-    # midi_data is a pretty_midi.PrettyMIDI object — extract notes directly
+    # midi_data is a pretty_midi.PrettyMIDI object — extract notes directly.
+    # pretty_midi returns pitch/velocity as numpy scalar types (e.g.
+    # numpy.int64), which FastAPI's JSON encoder can't serialize — cast
+    # everything to native Python types.
     notes = []
     for instrument in midi_data.instruments:
         for note in instrument.notes:
             notes.append({
-                "pitch": note.pitch,
-                "start": round(note.start, 4),
-                "end": round(note.end, 4),
-                "velocity": note.velocity,
+                "pitch": int(note.pitch),
+                "start": round(float(note.start), 4),
+                "end": round(float(note.end), 4),
+                "velocity": int(note.velocity),
             })
 
     # Sort by start time
