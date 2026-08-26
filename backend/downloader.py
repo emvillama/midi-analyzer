@@ -48,10 +48,27 @@ def is_valid_youtube_url(url: str) -> bool:
     return _extract_video_id(url) is not None
 
 
-def _get_ffmpeg_dir() -> str:
+def _get_ffmpeg_dir() -> str | None:
+    """
+    Directory to hand yt-dlp for locating ffmpeg/ffprobe, or None to let
+    yt-dlp fall back to searching the system PATH.
+
+    In a packaged (frozen) build, PyInstaller always extracts the bundled
+    Windows ffmpeg.exe/ffprobe.exe into sys._MEIPASS. In dev, bin/ at the
+    repo root is meant for that same Windows-packaging use case — on
+    Linux/WSL it's typically empty (or missing), so pointing yt-dlp at it
+    would hand it a bogus path instead of the system's real ffmpeg. Only
+    use bin/ in dev if it actually contains a usable binary for this OS.
+    """
     if getattr(sys, "frozen", False):
         return sys._MEIPASS  # PyInstaller extracts bin/ contents here
-    return os.path.join(os.path.dirname(__file__), "..", "bin")
+
+    bin_dir = os.path.join(os.path.dirname(__file__), "..", "bin")
+    exe_name = "ffmpeg.exe" if os.name == "nt" else "ffmpeg"
+    if os.path.isfile(os.path.join(bin_dir, exe_name)):
+        return bin_dir
+
+    return None
 
 
 def _load_manifest() -> dict:
@@ -175,10 +192,13 @@ def download_audio(url: str) -> str:
             "key": "FFmpegExtractAudio",
             "preferredcodec": "wav",
         }],
-        "ffmpeg_location": _get_ffmpeg_dir(),
         "quiet": True,
         "extractor_args": {"youtube": {"js_runtimes": ["deno", "node"]}},
     }
+
+    ffmpeg_dir = _get_ffmpeg_dir()
+    if ffmpeg_dir:
+        ydl_opts["ffmpeg_location"] = ffmpeg_dir
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
