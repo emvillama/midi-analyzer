@@ -17,14 +17,19 @@ from backend.recommender import recommend
 
 app = FastAPI()
 
+PORT = 8000
+
+ALLOWED_ORIGINS = [
+    f"http://127.0.0.1:{PORT}",
+    f"http://localhost:{PORT}",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=ALLOWED_ORIGINS,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
 )
-
-PORT = 8000
 
 # Resolve paths relative to this file so they work after PyInstaller bundling
 # otherwise fall back to the project root relative to this file.
@@ -74,6 +79,8 @@ def download(req: DownloadRequest):
     try:
         wav_path = download_audio(req.url)
         return {"wav_path": wav_path}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
