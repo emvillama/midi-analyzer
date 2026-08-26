@@ -82,17 +82,44 @@ function reset() {
 
 // ── api calls ─────────────────────────────────────────────────────────────────
 
+// Generous per-endpoint timeouts (ms). Download/transcribe can legitimately
+// take a while on long videos or slower machines; analyze/recommend are pure
+// local computation and should always be fast.
+const TIMEOUTS = {
+  download:   120000,
+  transcribe: 180000,
+  analyze:     30000,
+  recommend:   15000,
+};
+
 async function post(endpoint, body) {
-  const res = await fetch(`${API}/${endpoint}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(err.detail || res.statusText);
+  const timeoutMs = TIMEOUTS[endpoint] ?? 30000;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const res = await fetch(`${API}/${endpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || res.statusText);
+    }
+    return res.json();
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      throw new Error(
+        `The ${endpoint} step took too long (over ${Math.round(timeoutMs / 1000)}s) and was cancelled. ` +
+        'This can happen with very long videos or a slow connection — try a shorter clip or try again.'
+      );
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
   }
-  return res.json();
 }
 
 // ── render results ────────────────────────────────────────────────────────────
