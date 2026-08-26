@@ -133,8 +133,6 @@ html, body {
 
 /* ── url bar ───────────────────────────────────────────────────────────────── */
 
-.input-section {}
-
 .url-bar {
   display: flex;
   align-items: center;
