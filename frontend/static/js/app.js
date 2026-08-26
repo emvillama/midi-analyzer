@@ -23,6 +23,24 @@ const MOCK_DATA = {
     { label: 'Chord playing',                   timestamps: [6.0, 22.3, 47.8] },
     { label: 'Arpeggios',                       timestamps: [4.2, 18.7, 41.0] },
   ] },
+  history: { history: [
+    {
+      video_id: 'cVYH-7QGE-A',
+      title: 'Clair de Lune - Debussy (Valentina Lisitsa)',
+      url: 'https://www.youtube.com/watch?v=cVYH-7QGE-A',
+      wav_path: 'temp/cVYH-7QGE-A.wav',
+      downloaded_at: '2026-08-20T14:02:11+00:00',
+      last_used_at: '2026-08-25T09:41:00+00:00',
+    },
+    {
+      video_id: 'fake0000002',
+      title: 'Fantaisie-Impromptu - Chopin (Yuja Wang)',
+      url: 'https://www.youtube.com/watch?v=fake0000002',
+      wav_path: 'temp/fake0000002.wav',
+      downloaded_at: '2026-08-18T10:00:00+00:00',
+      last_used_at: '2026-08-18T10:00:00+00:00',
+    },
+  ] },
 };
  
 // Simulates network delay so the pipeline steps are visible
@@ -39,6 +57,8 @@ const resultsSection = document.getElementById('results-section');
 const recList       = document.getElementById('rec-list');
 const scoresGrid    = document.getElementById('scores-grid');
 const resetBtn      = document.getElementById('reset-btn');
+const historySection = document.getElementById('history-section');
+const historyList    = document.getElementById('history-list');
 
 const steps = {
   download:   document.getElementById('step-download'),
@@ -179,9 +199,67 @@ async function waitForBackend(retries = 5, delayMs = 400) {
   return false;
 }
 
+// ── history (previously analyzed pieces) ────────────────────────────────────
+
+function formatRelativeTime(isoString) {
+  const then = new Date(isoString).getTime();
+  if (Number.isNaN(then)) return '';
+  const diffMs = Date.now() - then;
+  const mins = Math.round(diffMs / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  return new Date(isoString).toLocaleDateString();
+}
+
+function renderHistory(items) {
+  historyList.innerHTML = '';
+
+  if (!items || items.length === 0) {
+    historySection.style.display = 'none';
+    return;
+  }
+
+  items.forEach(item => {
+    const li = document.createElement('li');
+    li.className = 'history-item';
+    li.innerHTML = `
+      <span class="history-title">${item.title || item.video_id}</span>
+      <span class="history-meta">${formatRelativeTime(item.last_used_at)}</span>
+    `;
+    li.addEventListener('click', () => runPipeline({
+      url: item.url,
+      wavPath: item.wav_path,
+      title: item.title || item.video_id,
+    }));
+    historyList.appendChild(li);
+  });
+
+  historySection.style.display = 'block';
+}
+
+async function loadHistory() {
+  try {
+    if (MOCK) {
+      renderHistory(MOCK_DATA.history.history);
+      return;
+    }
+    const res = await fetch(`${API}/history`);
+    if (!res.ok) return; // non-fatal — just don't show history
+    const { history } = await res.json();
+    renderHistory(history);
+  } catch (_) {
+    // backend not reachable yet, or /history failed — fail silently,
+    // history is a convenience feature, not core to the pipeline
+  }
+}
+
 // ── main pipeline ─────────────────────────────────────────────────────────────
 
-async function runPipeline(url) {
+async function runPipeline({ url, wavPath, title } = {}) {
   analyzeBtn.disabled = true;
   pipelineSection.style.display = 'block';
   errorSection.style.display    = 'none';
@@ -196,14 +274,20 @@ async function runPipeline(url) {
       }
     }
 
-    // 1. Download
-    setStep('download', 'active', 'downloading audio...');
-    const { wav_path } = await post('download', { url });
-    setStep('download', 'done', wav_path);
+    // 1. Download (skipped entirely when revisiting a piece we already have a wav for)
+    let resolvedWavPath = wavPath;
+    if (resolvedWavPath) {
+      setStep('download', 'done', title ? `reusing: ${title}` : resolvedWavPath);
+    } else {
+      setStep('download', 'active', 'downloading audio...');
+      const result = await post('download', { url });
+      resolvedWavPath = result.wav_path;
+      setStep('download', 'done', resolvedWavPath);
+    }
 
     // 2. Transcribe
     setStep('transcribe', 'active', 'transcribing to midi...');
-    const { notes } = await post('transcribe', { wav_path });
+    const { notes } = await post('transcribe', { wav_path: resolvedWavPath });
     setStep('transcribe', 'done', `${notes.length} notes detected`);
 
     // 3. Analyze
@@ -219,6 +303,9 @@ async function runPipeline(url) {
     // Render
     renderResults(recommendations, scores);
 
+    // Refresh history — a fresh download adds a new entry, a revisit bumps last_used_at
+    loadHistory();
+
   } catch (err) {
     const active = Object.keys(steps).find(s => steps[s].classList.contains('active'));
     if (active) setStep(active, 'error', 'failed');
@@ -232,7 +319,7 @@ async function runPipeline(url) {
 analyzeBtn.addEventListener('click', () => {
   const url = urlInput.value.trim();
   if (!url) return urlInput.focus();
-  runPipeline(url);
+  runPipeline({ url });
 });
 
 urlInput.addEventListener('keydown', e => {
@@ -240,3 +327,7 @@ urlInput.addEventListener('keydown', e => {
 });
 
 resetBtn.addEventListener('click', reset);
+
+// ── init ──────────────────────────────────────────────────────────────────────
+
+loadHistory();

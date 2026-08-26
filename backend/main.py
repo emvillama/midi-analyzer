@@ -9,7 +9,7 @@ from pydantic import BaseModel
 import os
 import sys
 
-from backend.downloader import download_audio
+from backend.downloader import download_audio, list_downloads
 from backend.transcriber import transcribe
 from backend.analyzer import analyze
 from backend.recommender import recommend
@@ -73,6 +73,14 @@ class RecommendRequest(BaseModel):
 
 
 # ── endpoints ──────────────────────────────────────────────────────────────────
+
+@app.get("/history")
+def history():
+    try:
+        return {"history": list_downloads()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/download")
 def download(req: DownloadRequest):
