@@ -4,7 +4,7 @@ const API = 'http://127.0.0.1:8000';
 // Set to true to test the UI without the backend running.
 // Open index.html directly in a browser and it will use fake data.
  
-const MOCK = true;
+const MOCK = false;
  
 const MOCK_DATA = {
   download:  { wav_path: 'temp/cVYH-7QGE-A.wav' },
