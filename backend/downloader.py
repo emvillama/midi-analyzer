@@ -163,6 +163,11 @@ def download_audio(url: str) -> str:
             _record_download(video_id, url, existing_path)
             return existing_path
 
+    # As of late 2025, yt-dlp requires an external JS runtime to solve
+    # YouTube's anti-bot challenges — without one, downloads fail with a
+    # 403. Deno is yt-dlp's recommended, auto-detected default; Node is
+    # listed as a fallback in case only that's installed. See:
+    # https://github.com/yt-dlp/yt-dlp/wiki/EJS
     ydl_opts = {
         "format": "bestaudio/best",
         "outtmpl": os.path.join(DOWNLOAD_DIR, "%(id)s.%(ext)s"),
@@ -172,7 +177,7 @@ def download_audio(url: str) -> str:
         }],
         "ffmpeg_location": _get_ffmpeg_dir(),
         "quiet": True,
-        "extractor_args": {"youtube": {"js_runtimes": ["nodejs"]}},
+        "extractor_args": {"youtube": {"js_runtimes": ["deno", "node"]}},
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
