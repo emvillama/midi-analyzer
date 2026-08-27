@@ -59,6 +59,7 @@ const scoresGrid    = document.getElementById('scores-grid');
 const resetBtn      = document.getElementById('reset-btn');
 const historySection = document.getElementById('history-section');
 const historyList    = document.getElementById('history-list');
+const playerWrap     = document.getElementById('player-wrap');
 
 const steps = {
   download:   document.getElementById('step-download'),
@@ -94,6 +95,11 @@ function reset() {
   resultsSection.style.display  = 'none';
   recList.innerHTML    = '';
   scoresGrid.innerHTML = '';
+  stopLoop();
+  playerWrap.classList.remove('active');
+  if (ytPlayer && typeof ytPlayer.stopVideo === 'function') {
+    ytPlayer.stopVideo();
+  }
   Object.keys(steps).forEach(s => setStep(s, null, 'waiting...'));
   urlInput.value = '';
   analyzeBtn.disabled = false;
@@ -142,9 +148,130 @@ async function post(endpoint, body) {
   }
 }
 
+// ── practice player (embedded YouTube video, click-a-timestamp-to-loop) ────
+
+let ytApiReady   = false;
+let ytApiLoading = false;
+let ytPlayer     = null;
+let pendingVideoId = null;
+let loopTimer   = null;
+let loopRange   = null;
+let activeChip  = null;
+
+const LOOP_LEAD_IN   = 1;   // seconds before the flagged timestamp to start
+const LOOP_DURATION  = 6;   // seconds the loop plays before repeating
+
+function loadYouTubeApi() {
+  if (ytApiReady || ytApiLoading) return;
+  ytApiLoading = true;
+
+  window.onYouTubeIframeAPIReady = () => {
+    ytApiReady = true;
+    if (pendingVideoId) {
+      createYtPlayer(pendingVideoId);
+      pendingVideoId = null;
+    }
+  };
+
+  const tag = document.createElement('script');
+  tag.src = 'https://www.youtube.com/iframe_api';
+  const firstScript = document.getElementsByTagName('script')[0];
+  firstScript.parentNode.insertBefore(tag, firstScript);
+}
+
+function createYtPlayer(videoId) {
+  ytPlayer = new YT.Player('yt-player', {
+    videoId,
+    playerVars: { rel: 0 },
+  });
+}
+
+function loadPlayerVideo(videoId) {
+  stopLoop();
+  if (!videoId) return;
+
+  if (!ytApiReady) {
+    pendingVideoId = videoId;
+    loadYouTubeApi();
+    return;
+  }
+
+  if (ytPlayer && typeof ytPlayer.cueVideoById === 'function') {
+    ytPlayer.cueVideoById(videoId);
+  } else {
+    createYtPlayer(videoId);
+  }
+}
+
+function videoIdFromWavPath(wavPath) {
+  const base = (wavPath || '').split(/[\\/]/).pop() || '';
+  return base.replace(/\.wav$/i, '');
+}
+
+function formatTimestamp(seconds) {
+  const total = Math.max(0, Math.round(seconds));
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+function stopLoop() {
+  if (loopTimer) {
+    clearInterval(loopTimer);
+    loopTimer = null;
+  }
+  loopRange = null;
+  if (activeChip) {
+    activeChip.classList.remove('active');
+    activeChip = null;
+  }
+}
+
+function seekAndLoop(startSeconds, chipEl) {
+  if (!ytPlayer || typeof ytPlayer.seekTo !== 'function') return;
+
+  // Clicking the currently-looping chip again toggles it off.
+  if (activeChip === chipEl) {
+    stopLoop();
+    if (typeof ytPlayer.pauseVideo === 'function') ytPlayer.pauseVideo();
+    return;
+  }
+
+  stopLoop();
+  if (chipEl) {
+    chipEl.classList.add('active');
+    activeChip = chipEl;
+  }
+
+  const start = Math.max(0, startSeconds - LOOP_LEAD_IN);
+  const end = start + LOOP_DURATION;
+  loopRange = { start, end };
+
+  ytPlayer.seekTo(start, true);
+  ytPlayer.playVideo();
+
+  loopTimer = setInterval(() => {
+    if (!ytPlayer || !loopRange || typeof ytPlayer.getCurrentTime !== 'function') return;
+    if (ytPlayer.getCurrentTime() >= loopRange.end) {
+      ytPlayer.seekTo(loopRange.start, true);
+    }
+  }, 300);
+}
+
 // ── render results ────────────────────────────────────────────────────────────
 
-function renderResults(recommendations, scores) {
+function renderResults(recommendations, scores, videoId) {
+  recList.innerHTML = '';
+  scoresGrid.innerHTML = '';
+
+  // Practice player
+  if (videoId) {
+    playerWrap.classList.add('active');
+    loadPlayerVideo(videoId);
+  } else {
+    playerWrap.classList.remove('active');
+  }
+
   // Recommendations list
   if (recommendations.length === 0) {
     const li = document.createElement('li');
@@ -155,7 +282,26 @@ function renderResults(recommendations, scores) {
     recommendations.forEach(rec => {
       const li = document.createElement('li');
       li.className = 'rec-item';
-      li.innerHTML = `<span class="rec-bullet"></span><span class="rec-text">${rec.label}</span>`;
+
+      const row = document.createElement('div');
+      row.className = 'rec-item-row';
+      row.innerHTML = `<span class="rec-bullet"></span><span class="rec-text">${rec.label}</span>`;
+      li.appendChild(row);
+
+      if (videoId && rec.timestamps && rec.timestamps.length > 0) {
+        const chips = document.createElement('div');
+        chips.className = 'rec-timestamps';
+        rec.timestamps.forEach(ts => {
+          const chip = document.createElement('button');
+          chip.type = 'button';
+          chip.className = 'timestamp-chip';
+          chip.textContent = formatTimestamp(ts);
+          chip.addEventListener('click', () => seekAndLoop(ts, chip));
+          chips.appendChild(chip);
+        });
+        li.appendChild(chips);
+      }
+
       recList.appendChild(li);
     });
   }
@@ -301,7 +447,8 @@ async function runPipeline({ url, wavPath, title } = {}) {
     setStep('recommend', 'done', `${recommendations.length} recommendations`);
 
     // Render
-    renderResults(recommendations, scores);
+    const videoId = videoIdFromWavPath(resolvedWavPath);
+    renderResults(recommendations, scores, videoId);
 
     // Refresh history — a fresh download adds a new entry, a revisit bumps last_used_at
     loadHistory();
