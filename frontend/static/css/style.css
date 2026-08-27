@@ -408,6 +408,38 @@ html, body {
   to   { opacity: 1; transform: translateY(0); }
 }
 
+/* ── embedded practice player ─────────────────────────────────────────────── */
+
+.player-wrap {
+  position: relative;
+  width: 100%;
+  padding-top: 56.25%; /* 16:9 */
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: #000;
+  display: none;
+}
+
+.player-wrap.active {
+  display: block;
+}
+
+#yt-player {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+.results-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
 .results-label,
 .scores-label {
   font-family: var(--mono);
@@ -416,6 +448,13 @@ html, body {
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--muted);
+}
+
+.results-hint {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 0.02em;
 }
 
 .rec-list {
@@ -427,8 +466,8 @@ html, body {
 
 .rec-item {
   display: flex;
-  align-items: center;
-  gap: 12px;
+  flex-direction: column;
+  gap: 8px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -443,6 +482,12 @@ html, body {
 .rec-item:nth-child(5) { animation-delay: 0.25s; }
 .rec-item:nth-child(6) { animation-delay: 0.30s; }
 
+.rec-item-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .rec-bullet {
   width: 6px;
   height: 6px;
@@ -454,6 +499,36 @@ html, body {
 .rec-text {
   font-size: 15px;
   color: var(--text);
+}
+
+.rec-timestamps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-left: 18px;
+}
+
+.timestamp-chip {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: 999px;
+  padding: 3px 10px;
+  color: var(--accent);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.timestamp-chip:hover {
+  border-color: var(--accent);
+}
+
+.timestamp-chip.active {
+  background: var(--accent);
+  color: #0e0e0f;
+  border-color: var(--accent);
 }
 
 .scores-grid {
