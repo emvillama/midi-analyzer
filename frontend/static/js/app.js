@@ -61,7 +61,7 @@ const historySection = document.getElementById('history-section');
 const historyList    = document.getElementById('history-list');
 const playerWrap     = document.getElementById('player-wrap');
 const playerError     = document.getElementById('player-error');
-const playerErrorLink = document.getElementById('player-error-link');
+const playerOpenBtn   = document.getElementById('player-open-btn');
 
 const steps = {
   download:   document.getElementById('step-download'),
@@ -100,6 +100,9 @@ function reset() {
   stopLoop();
   hidePlayerError();
   playerWrap.classList.remove('active');
+  currentVideoId = null;
+  lastSeekSeconds = null;
+  updatePlayerOpenBtnLabel();
   if (ytPlayer && typeof ytPlayer.stopVideo === 'function') {
     ytPlayer.stopVideo();
   }
@@ -152,12 +155,22 @@ async function post(endpoint, body) {
 }
 
 // ── practice player (embedded YouTube video, click-a-timestamp-to-loop) ────
+//
+// The embedded WebKitGTK view often can't actually play YouTube's embedded
+// player (missing codec/DRM support) — and YouTube frequently fails
+// *silently* from the JS API's point of view (no onError fires; YouTube's
+// own "can't play this video" message just renders inside the iframe). So
+// rather than depending on error detection, a persistent "watch on
+// YouTube" button always launches the video in the user's real system
+// browser — which has proper codec support — synced to whichever
+// timestamp was last tapped.
 
 let ytApiReady   = false;
 let ytApiLoading = false;
 let ytPlayer     = null;
-let pendingVideoId = null;
-let currentVideoId = null;
+let pendingVideoId  = null;
+let currentVideoId  = null;
+let lastSeekSeconds = null;
 let loopTimer   = null;
 let loopRange   = null;
 let activeChip  = null;
@@ -188,14 +201,13 @@ function createYtPlayer(videoId) {
     videoId,
     playerVars: { rel: 0 },
     events: {
-      onError: () => showPlayerError(currentVideoId),
+      onError: () => showPlayerError(),
     },
   });
 }
 
-function showPlayerError(videoId) {
+function showPlayerError() {
   playerError.style.display = 'flex';
-  playerErrorLink.href = `https://www.youtube.com/watch?v=${videoId}`;
 }
 
 function hidePlayerError() {
@@ -207,6 +219,8 @@ function loadPlayerVideo(videoId) {
   hidePlayerError();
   if (!videoId) return;
   currentVideoId = videoId;
+  lastSeekSeconds = null;
+  updatePlayerOpenBtnLabel();
 
   if (!ytApiReady) {
     pendingVideoId = videoId;
@@ -220,6 +234,38 @@ function loadPlayerVideo(videoId) {
     createYtPlayer(videoId);
   }
 }
+
+// Opens a URL in the user's actual system browser via pywebview's JS API
+// bridge (Api.open_external in main.py) — falls back to window.open for
+// contexts without the pywebview bridge (e.g. testing in a plain browser).
+async function openExternal(url) {
+  try {
+    if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.open_external === 'function') {
+      const opened = await window.pywebview.api.open_external(url);
+      if (opened) return;
+    }
+  } catch (_) {
+    // fall through to window.open
+  }
+  window.open(url, '_blank');
+}
+
+function buildWatchUrl() {
+  if (!currentVideoId) return null;
+  const base = `https://www.youtube.com/watch?v=${currentVideoId}`;
+  return lastSeekSeconds != null ? `${base}&t=${Math.floor(lastSeekSeconds)}s` : base;
+}
+
+function updatePlayerOpenBtnLabel() {
+  playerOpenBtn.textContent = lastSeekSeconds != null
+    ? `watch on youtube · ${formatTimestamp(lastSeekSeconds)} ↗`
+    : 'watch on youtube ↗';
+}
+
+playerOpenBtn.addEventListener('click', () => {
+  const url = buildWatchUrl();
+  if (url) openExternal(url);
+});
 
 function videoIdFromWavPath(wavPath) {
   const base = (wavPath || '').split(/[\\/]/).pop() || '';
@@ -246,6 +292,12 @@ function stopLoop() {
 }
 
 function seekAndLoop(startSeconds, chipEl) {
+  // Keep the "watch on youtube" button synced to whichever timestamp was
+  // last tapped, regardless of whether the embedded player can actually
+  // play it — this is the reliable path, not a fallback.
+  lastSeekSeconds = startSeconds;
+  updatePlayerOpenBtnLabel();
+
   if (!ytPlayer || typeof ytPlayer.seekTo !== 'function') return;
 
   // Clicking the currently-looping chip again toggles it off.
