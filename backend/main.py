@@ -1,6 +1,8 @@
 import threading
 import uvicorn
 import webview
+import webbrowser
+from urllib.parse import urlparse
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -126,6 +128,30 @@ def get_recommendations(req: RecommendRequest):
 
 # ── app launch ─────────────────────────────────────────────────────────────────
 
+_ALLOWED_EXTERNAL_HOSTS = {
+    "youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be",
+}
+
+
+class Api:
+    """
+    Exposed to the frontend as `pywebview.api.*`. The embedded WebKitGTK
+    view often can't play YouTube's embedded player (missing codec/DRM
+    support), even when the YouTube iframe itself loads without raising a
+    JS API error — so the reliable fix is opening the video in the user's
+    actual system browser instead, which has real codec support.
+    """
+
+    def open_external(self, url: str) -> bool:
+        try:
+            host = (urlparse(url).hostname or "").lower()
+        except ValueError:
+            return False
+        if host not in _ALLOWED_EXTERNAL_HOSTS:
+            return False
+        return webbrowser.open(url)
+
+
 def start_server():
     uvicorn.run(app, host="127.0.0.1", port=PORT, log_level="warning")
 
@@ -140,6 +166,7 @@ def main():
         width=800,
         height=600,
         resizable=True,
+        js_api=Api(),
     )
     webview.start()
 
