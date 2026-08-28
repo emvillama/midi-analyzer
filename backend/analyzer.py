@@ -1,6 +1,33 @@
 from collections import defaultdict
 
+# A run of the same pattern happening every note or two (e.g. a passage full
+# of large jumps) would otherwise produce a timestamp for every single event
+# — useless for practice, since a "section" 1 second long isn't practiceable.
+# Timestamps closer together than this are merged into one marker.
+MIN_TIMESTAMP_GAP = 4.0
+
+# Even after merging, a piece that's saturated with a pattern throughout
+# could still produce a long list. Cap it so the UI stays usable — the
+# earliest occurrences are generally the most useful to see first.
+MAX_TIMESTAMPS = 15
+
 # helpers ──────────────────────────────────────────────────────────
+
+def _merge_nearby_timestamps(timestamps: list[float], min_gap: float = MIN_TIMESTAMP_GAP) -> list[float]:
+    """
+    Collapse timestamps that fall within `min_gap` seconds of each other
+    into a single representative timestamp (the first occurrence in that
+    cluster). Turns "one hit per note" into "one marker per passage".
+    """
+    if not timestamps:
+        return []
+    ordered = sorted(timestamps)
+    merged = [ordered[0]]
+    for t in ordered[1:]:
+        if t - merged[-1] >= min_gap:
+            merged.append(t)
+    return merged
+
 
 def _estimate_tempo(notes: list[dict]) -> float:
     """Estimate BPM from median inter-onset interval."""
@@ -224,6 +251,7 @@ def analyze(notes: list[dict]) -> dict[str, dict]:
         ("hand_independence", _score_hand_independence),
     ]:
         score, timestamps = fn(notes, tempo)
-        results[key] = {"score": round(score, 1), "timestamps": timestamps}
+        merged = _merge_nearby_timestamps(timestamps)[:MAX_TIMESTAMPS]
+        results[key] = {"score": round(score, 1), "timestamps": merged}
 
     return results
