@@ -60,6 +60,8 @@ const resetBtn      = document.getElementById('reset-btn');
 const historySection = document.getElementById('history-section');
 const historyList    = document.getElementById('history-list');
 const playerWrap     = document.getElementById('player-wrap');
+const playerError     = document.getElementById('player-error');
+const playerErrorLink = document.getElementById('player-error-link');
 
 const steps = {
   download:   document.getElementById('step-download'),
@@ -96,6 +98,7 @@ function reset() {
   recList.innerHTML    = '';
   scoresGrid.innerHTML = '';
   stopLoop();
+  hidePlayerError();
   playerWrap.classList.remove('active');
   if (ytPlayer && typeof ytPlayer.stopVideo === 'function') {
     ytPlayer.stopVideo();
@@ -154,6 +157,7 @@ let ytApiReady   = false;
 let ytApiLoading = false;
 let ytPlayer     = null;
 let pendingVideoId = null;
+let currentVideoId = null;
 let loopTimer   = null;
 let loopRange   = null;
 let activeChip  = null;
@@ -183,12 +187,26 @@ function createYtPlayer(videoId) {
   ytPlayer = new YT.Player('yt-player', {
     videoId,
     playerVars: { rel: 0 },
+    events: {
+      onError: () => showPlayerError(currentVideoId),
+    },
   });
+}
+
+function showPlayerError(videoId) {
+  playerError.style.display = 'flex';
+  playerErrorLink.href = `https://www.youtube.com/watch?v=${videoId}`;
+}
+
+function hidePlayerError() {
+  playerError.style.display = 'none';
 }
 
 function loadPlayerVideo(videoId) {
   stopLoop();
+  hidePlayerError();
   if (!videoId) return;
+  currentVideoId = videoId;
 
   if (!ytApiReady) {
     pendingVideoId = videoId;
