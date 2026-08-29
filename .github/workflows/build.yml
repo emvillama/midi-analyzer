@@ -1,29 +1,37 @@
 name: Build Windows EXE
-
 on:
   push:
     branches: [master]
   workflow_dispatch:  # allow manual trigger from GitHub UI
-
 jobs:
   build:
     runs-on: windows-latest
-
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
-
       - name: Set up Python 3.10
         uses: actions/setup-python@v5
         with:
           python-version: "3.10"
-
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-
           # Install everything from requirements.txt, skipping packages
-          # that don't apply to Windows or need to be swapped out
+          # that don't apply to Windows or need to be swapped out.
+          #
+          # basic-pitch's own default inference backend on Windows is ONNX
+          # Runtime (TensorFlow is only pulled in if you explicitly ask for
+          # it) — and ONNX Runtime is a much better fit for PyInstaller: a
+          # single self-contained compiled library, versus TensorFlow's
+          # large, dynamically-loaded dependency tree that PyInstaller's
+          # static analysis frequently fails to fully bundle, causing
+          # "works in the venv, fails once frozen" import failures.
+          #
+          # pyinstaller-hooks-contrib ships the community-maintained
+          # bundling recipe for onnxruntime (and many other tricky
+          # packages) — it was previously listed in requirements.txt but
+          # never actually installed here, so PyInstaller had no hook to
+          # work from.
           pip install `
             fastapi `
             uvicorn `
@@ -33,17 +41,20 @@ jobs:
             pydantic `
             "numpy<2" `
             "basic-pitch==0.4.0" `
-            tensorflow `
-            pyinstaller
+            onnxruntime `
+            pyinstaller `
+            pyinstaller-hooks-contrib
         shell: pwsh
-
       - name: Locate basic-pitch model files
         id: model_path
         run: |
           $path = python -c "import basic_pitch; import os; print(os.path.dirname(basic_pitch.__file__))"
           echo "BASIC_PITCH_DIR=$path" >> $env:GITHUB_ENV
         shell: pwsh
-
+      - name: Confirm ONNX backend is what basic-pitch will actually use
+        run: |
+          python -c "from basic_pitch import ONNX_PRESENT, TF_PRESENT, TFLITE_PRESENT, CT_PRESENT, ICASSP_2022_MODEL_PATH; print(f'ONNX_PRESENT={ONNX_PRESENT} TF_PRESENT={TF_PRESENT} TFLITE_PRESENT={TFLITE_PRESENT} CT_PRESENT={CT_PRESENT}'); print(f'ICASSP_2022_MODEL_PATH={ICASSP_2022_MODEL_PATH}')"
+        shell: pwsh
       - name: Build EXE with PyInstaller
         run: |
           pyinstaller `
@@ -54,6 +65,7 @@ jobs:
             --add-data "backend;backend" `
             --add-data "bin;." `
             --add-data "${{ env.BASIC_PITCH_DIR }}/saved_models;basic_pitch/saved_models" `
+            --collect-all "onnxruntime" `
             --hidden-import "uvicorn.logging" `
             --hidden-import "uvicorn.loops" `
             --hidden-import "uvicorn.loops.auto" `
@@ -64,7 +76,6 @@ jobs:
             --hidden-import "uvicorn.lifespan.on" `
             backend/main.py
         shell: pwsh
-
       - name: Upload EXE artifact
         uses: actions/upload-artifact@v4
         with:
