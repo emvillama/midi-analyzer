@@ -25,13 +25,13 @@ def recommend(scores: dict[str, dict]) -> list[dict]:
 
     Args:
         scores: Output from analyzer.analyze()
-                e.g. {"scale_runs": {"score": 72.4, "timestamps": [4.2, 18.7]}, ...}
+                e.g. {"scale_runs": {"score": 72.4, "sections": [{"start": 4.2, "end": 7.8}]}, ...}
 
     Returns:
         List of recommendation dicts, sorted by score descending.
         e.g. [
-            {"label": "Hand independence", "timestamps": [1.2, 8.4]},
-            {"label": "Arpeggios",         "timestamps": [4.2, 18.7]},
+            {"label": "Hand independence", "sections": [{"start": 1.2, "end": 5.6}]},
+            {"label": "Arpeggios",         "sections": [{"start": 4.2, "end": 7.8}]},
         ]
     """
     qualifying = [
@@ -44,8 +44,8 @@ def recommend(scores: dict[str, dict]) -> list[dict]:
 
     return [
         {
-            "label":      LABELS[pattern],
-            "timestamps": entry["timestamps"],
+            "label":    LABELS[pattern],
+            "sections": entry["sections"],
         }
         for pattern, entry in qualifying
     ]
