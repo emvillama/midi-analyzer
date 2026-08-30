@@ -10,18 +10,18 @@ const MOCK_DATA = {
   download:  { wav_path: 'temp/cVYH-7QGE-A.wav' },
   transcribe: { notes: Array(2252).fill({ pitch: 60, start: 0, end: 0.5, velocity: 80 }) },
   analyze:   { scores: {
-    scale_runs:        { score: 8.3,   timestamps: [12.4] },
-    arpeggios:          { score: 77.9,  timestamps: [4.2, 18.7, 41.0] },
-    large_jumps:        { score: 100,   timestamps: [2.1, 9.9, 30.5, 55.2] },
-    repeated_notes:     { score: 10.4,  timestamps: [] },
-    chord_density:       { score: 92.5,  timestamps: [6.0, 22.3, 47.8] },
-    hand_independence:   { score: 100,   timestamps: [1.2, 8.4, 33.6] },
+    scale_runs:        { score: 8.3,   sections: [{ start: 11.9, end: 15.4 }] },
+    arpeggios:          { score: 77.9,  sections: [{ start: 3.5, end: 7.8 }, { start: 17.9, end: 22.1 }, { start: 40.2, end: 44.6 }] },
+    large_jumps:        { score: 100,   sections: [{ start: 1.6, end: 5.2 }, { start: 9.1, end: 13.9 }, { start: 29.8, end: 34.0 }, { start: 54.5, end: 58.3 }] },
+    repeated_notes:     { score: 10.4,  sections: [] },
+    chord_density:       { score: 92.5,  sections: [{ start: 5.4, end: 9.1 }, { start: 21.7, end: 26.5 }, { start: 47.1, end: 51.0 }] },
+    hand_independence:   { score: 100,   sections: [{ start: 0.6, end: 5.0 }, { start: 7.8, end: 11.6 }, { start: 32.9, end: 37.2 }] },
   } },
   recommend: { recommendations: [
-    { label: 'Hand independence',              timestamps: [1.2, 8.4, 33.6] },
-    { label: 'Large jumps / position shifts',   timestamps: [2.1, 9.9, 30.5, 55.2] },
-    { label: 'Chord playing',                   timestamps: [6.0, 22.3, 47.8] },
-    { label: 'Arpeggios',                       timestamps: [4.2, 18.7, 41.0] },
+    { label: 'Hand independence',              sections: [{ start: 0.6, end: 5.0 }, { start: 7.8, end: 11.6 }, { start: 32.9, end: 37.2 }] },
+    { label: 'Large jumps / position shifts',   sections: [{ start: 1.6, end: 5.2 }, { start: 9.1, end: 13.9 }, { start: 29.8, end: 34.0 }, { start: 54.5, end: 58.3 }] },
+    { label: 'Chord playing',                   sections: [{ start: 5.4, end: 9.1 }, { start: 21.7, end: 26.5 }, { start: 47.1, end: 51.0 }] },
+    { label: 'Arpeggios',                       sections: [{ start: 3.5, end: 7.8 }, { start: 17.9, end: 22.1 }, { start: 40.2, end: 44.6 }] },
   ] },
   history: { history: [
     {
@@ -175,8 +175,8 @@ let loopTimer   = null;
 let loopRange   = null;
 let activeChip  = null;
 
-const LOOP_LEAD_IN   = 1;   // seconds before the flagged timestamp to start
-const LOOP_DURATION  = 6;   // seconds the loop plays before repeating
+// (loop timing now comes from the actual detected section's start/end,
+// computed server-side in analyzer.py — no fixed window needed here)
 
 function loadYouTubeApi() {
   if (ytApiReady || ytApiLoading) return;
@@ -279,6 +279,10 @@ function formatTimestamp(seconds) {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
+function formatRange(start, end) {
+  return `${formatTimestamp(start)}–${formatTimestamp(end)}`;
+}
+
 function stopLoop() {
   if (loopTimer) {
     clearInterval(loopTimer);
@@ -291,11 +295,11 @@ function stopLoop() {
   }
 }
 
-function seekAndLoop(startSeconds, chipEl) {
-  // Keep the "watch on youtube" button synced to whichever timestamp was
+function seekAndLoop(section, chipEl) {
+  // Keep the "watch on youtube" button synced to whichever section was
   // last tapped, regardless of whether the embedded player can actually
   // play it — this is the reliable path, not a fallback.
-  lastSeekSeconds = startSeconds;
+  lastSeekSeconds = section.start;
   updatePlayerOpenBtnLabel();
 
   if (!ytPlayer || typeof ytPlayer.seekTo !== 'function') return;
@@ -313,11 +317,13 @@ function seekAndLoop(startSeconds, chipEl) {
     activeChip = chipEl;
   }
 
-  const start = Math.max(0, startSeconds - LOOP_LEAD_IN);
-  const end = start + LOOP_DURATION;
-  loopRange = { start, end };
+  // Use the actual detected passage boundaries (already padded with a
+  // lead-in/lead-out by the analyzer) rather than a synthetic fixed window
+  // — the loop now matches the real musical section, not an arbitrary
+  // few-second guess.
+  loopRange = { start: section.start, end: section.end };
 
-  ytPlayer.seekTo(start, true);
+  ytPlayer.seekTo(section.start, true);
   ytPlayer.playVideo();
 
   loopTimer = setInterval(() => {
@@ -358,15 +364,15 @@ function renderResults(recommendations, scores, videoId) {
       row.innerHTML = `<span class="rec-bullet"></span><span class="rec-text">${rec.label}</span>`;
       li.appendChild(row);
 
-      if (videoId && rec.timestamps && rec.timestamps.length > 0) {
+      if (videoId && rec.sections && rec.sections.length > 0) {
         const chips = document.createElement('div');
         chips.className = 'rec-timestamps';
-        rec.timestamps.forEach(ts => {
+        rec.sections.forEach(section => {
           const chip = document.createElement('button');
           chip.type = 'button';
           chip.className = 'timestamp-chip';
-          chip.textContent = formatTimestamp(ts);
-          chip.addEventListener('click', () => seekAndLoop(ts, chip));
+          chip.textContent = formatRange(section.start, section.end);
+          chip.addEventListener('click', () => seekAndLoop(section, chip));
           chips.appendChild(chip);
         });
         li.appendChild(chips);
@@ -402,13 +408,18 @@ function renderResults(recommendations, scores, videoId) {
   resultsSection.style.display = 'flex';
 }
 
-async function waitForBackend(retries = 5, delayMs = 400) {
+async function waitForBackend(retries = 20, delayMs = 700) {
   for (let i = 0; i < retries; i++) {
     try {
       const res = await fetch(`${API}/health`);
       if (res.ok) return true;
-    } catch (_) {
-      // backend not up yet, keep retrying
+      console.warn(`[waitForBackend] attempt ${i + 1}/${retries}: got HTTP ${res.status}`);
+    } catch (err) {
+      // Most likely cause on Windows: a firewall prompt is blocking the
+      // connection until the user clicks "Allow access", or the freshly
+      // launched .exe is still being scanned by antivirus. Logged (not
+      // swallowed) so it's visible in devtools if this keeps happening.
+      console.warn(`[waitForBackend] attempt ${i + 1}/${retries} failed:`, err.message);
     }
     await new Promise(r => setTimeout(r, delayMs));
   }
@@ -483,10 +494,14 @@ async function runPipeline({ url, wavPath, title } = {}) {
 
   try {
     if (!MOCK) {
-      setStep('download', 'active', 'connecting...');
+      setStep('download', 'active', 'connecting to backend...');
       const ready = await waitForBackend();
       if (!ready) {
-        throw new Error('Backend is still starting up. Please try again in a moment.');
+        throw new Error(
+          'Could not reach the backend after several attempts. If a Windows ' +
+          'Firewall prompt appeared for this app, click "Allow access" and try ' +
+          'again — otherwise, try restarting the app.'
+        );
       }
     }
 
