@@ -15,6 +15,7 @@ from backend.downloader import download_audio, list_downloads
 from backend.transcriber import transcribe
 from backend.analyzer import analyze
 from backend.recommender import recommend
+from backend.loops import list_loops, add_loop, delete_loop
 
 
 app = FastAPI()
@@ -73,6 +74,12 @@ class AnalyzeRequest(BaseModel):
 class RecommendRequest(BaseModel):
     scores: dict[str, dict]
 
+class CreateLoopRequest(BaseModel):
+    video_id: str
+    name: str
+    start: float
+    end: float
+
 
 # ── endpoints ──────────────────────────────────────────────────────────────────
 
@@ -80,6 +87,38 @@ class RecommendRequest(BaseModel):
 def history():
     try:
         return {"history": list_downloads()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/loops/{video_id}")
+def get_loops(video_id: str):
+    try:
+        return {"loops": list_loops(video_id)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/loops")
+def create_loop(req: CreateLoopRequest):
+    try:
+        loop = add_loop(req.video_id, req.name, req.start, req.end)
+        return {"loop": loop}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/loops/{video_id}/{loop_id}")
+def remove_loop(video_id: str, loop_id: str):
+    try:
+        deleted = delete_loop(video_id, loop_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Loop not found.")
+        return {"deleted": True}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
