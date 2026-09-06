@@ -1,8 +1,33 @@
 import os
-import tempfile
+import threading
 import pretty_midi
-from basic_pitch.inference import predict
+from basic_pitch.inference import predict, Model
 from basic_pitch import ICASSP_2022_MODEL_PATH
+
+_model: Model | None = None
+_model_lock = threading.Lock()
+
+
+def _get_model() -> Model:
+    """
+    Lazily load the basic-pitch model once and reuse it across calls.
+    Without this, basic_pitch.inference.predict() reloads the model
+    (TensorFlow SavedModel or ONNX graph, depending on backend) from disk
+    on every single call — a multi-second cost paid on every
+    transcription instead of just the first.
+    """
+    global _model
+    if _model is None:
+        with _model_lock:
+            if _model is None:
+                _model = Model(ICASSP_2022_MODEL_PATH)
+    return _model
+
+
+def warm_up() -> None:
+    """Force the model to load now (e.g. at app startup) instead of
+    lazily on the first real /transcribe request."""
+    _get_model()
 
 
 def transcribe(wav_path: str) -> list[dict]:
@@ -25,21 +50,16 @@ def transcribe(wav_path: str) -> list[dict]:
     if not os.path.exists(wav_path):
         raise FileNotFoundError(f"Audio file not found: {wav_path}")
 
-    # Run basic-pitch transcription
     try:
         model_output, midi_data, note_events = predict(
             wav_path,
-            ICASSP_2022_MODEL_PATH,
+            _get_model(),
         )
     except Exception as e:
         raise RuntimeError(
             f"Transcription failed for {wav_path}: {e}"
         ) from e
 
-    # midi_data is a pretty_midi.PrettyMIDI object — extract notes directly.
-    # pretty_midi returns pitch/velocity as numpy scalar types (e.g.
-    # numpy.int64), which FastAPI's JSON encoder can't serialize — cast
-    # everything to native Python types.
     notes = []
     for instrument in midi_data.instruments:
         for note in instrument.notes:
@@ -50,7 +70,6 @@ def transcribe(wav_path: str) -> list[dict]:
                 "velocity": int(note.velocity),
             })
 
-    # Sort by start time
     notes.sort(key=lambda n: n["start"])
 
     return notes
