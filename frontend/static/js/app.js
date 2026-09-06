@@ -41,6 +41,11 @@ const MOCK_DATA = {
       last_used_at: '2026-08-18T10:00:00+00:00',
     },
   ] },
+  loops: {
+    'cVYH-7QGE-A': [
+      { id: 'mockloop1', name: 'Left hand jump section', start: 12.0, end: 18.5, created_at: '2026-08-24T10:00:00+00:00' },
+    ],
+  },
 };
  
 // Simulates network delay so the pipeline steps are visible
@@ -62,6 +67,9 @@ const historyList    = document.getElementById('history-list');
 const playerWrap     = document.getElementById('player-wrap');
 const playerError     = document.getElementById('player-error');
 const playerOpenBtn   = document.getElementById('player-open-btn');
+const loopsSection = document.getElementById('loops-section');
+const loopCreator  = document.getElementById('loop-creator');
+const loopList     = document.getElementById('loop-list');
 
 const steps = {
   download:   document.getElementById('step-download'),
@@ -100,6 +108,10 @@ function reset() {
   stopLoop();
   hidePlayerError();
   playerWrap.classList.remove('active');
+  loopsSection.classList.remove('active');
+  currentLoops = [];
+  loopList.innerHTML = '';
+  resetLoopCreator();
   currentVideoId = null;
   lastSeekSeconds = null;
   updatePlayerOpenBtnLabel();
@@ -202,6 +214,9 @@ function createYtPlayer(videoId) {
     playerVars: { rel: 0 },
     events: {
       onError: () => showPlayerError(),
+      onReady: () => {
+        if (loopCreationState === 'idle') renderLoopCreator();
+      },
     },
   });
 }
@@ -334,6 +349,261 @@ function seekAndLoop(section, chipEl) {
   }, 300);
 }
 
+// ── custom loops (user-created, named, saved across sessions) ──────────────
+
+let currentLoops = [];               // loops for the currently loaded video
+let loopCreationState = 'idle';      // 'idle' | 'marking-start' | 'marking-end' | 'naming'
+let pendingLoopStart = null;
+let pendingLoopEnd = null;
+
+function playerCanCaptureTime() {
+  return !!(ytPlayer && typeof ytPlayer.getCurrentTime === 'function');
+}
+
+function renderLoopCreator() {
+  loopCreator.innerHTML = '';
+
+  if (loopCreationState === 'idle') {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'loop-create-btn';
+    btn.textContent = '+ create loop';
+    const disabled = !playerCanCaptureTime();
+    btn.disabled = disabled;
+    if (disabled) {
+      btn.title = "Video playback isn't available, so loop points can't be captured.";
+    }
+    btn.addEventListener('click', () => {
+      loopCreationState = 'marking-start';
+      renderLoopCreator();
+    });
+    loopCreator.appendChild(btn);
+    return;
+  }
+
+  if (loopCreationState === 'marking-start' || loopCreationState === 'marking-end') {
+    const msg = document.createElement('p');
+    msg.className = 'loop-creator-msg';
+    msg.textContent = loopCreationState === 'marking-start'
+      ? 'Play the video, then click below at the moment the loop should start.'
+      : `Start set at ${formatTimestamp(pendingLoopStart)}. Now click below at the moment it should end.`;
+    loopCreator.appendChild(msg);
+
+    const row = document.createElement('div');
+    row.className = 'loop-creator-row';
+
+    const markBtn = document.createElement('button');
+    markBtn.type = 'button';
+    markBtn.className = 'loop-creator-btn';
+    markBtn.textContent = loopCreationState === 'marking-start' ? 'start loop here' : 'end loop here';
+    markBtn.addEventListener('click', handleMarkClick);
+    row.appendChild(markBtn);
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'loop-creator-cancel-btn';
+    cancelBtn.textContent = 'cancel';
+    cancelBtn.addEventListener('click', resetLoopCreator);
+    row.appendChild(cancelBtn);
+
+    loopCreator.appendChild(row);
+    return;
+  }
+
+  if (loopCreationState === 'naming') {
+    const msg = document.createElement('p');
+    msg.className = 'loop-creator-msg';
+    msg.textContent = `Loop: ${formatRange(pendingLoopStart, pendingLoopEnd)}. Name it to save:`;
+    loopCreator.appendChild(msg);
+
+    const row = document.createElement('div');
+    row.className = 'loop-creator-row';
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'loop-name-input';
+    input.placeholder = 'e.g. left hand jump section';
+    input.maxLength = 80;
+    row.appendChild(input);
+
+    const saveBtn = document.createElement('button');
+    saveBtn.type = 'button';
+    saveBtn.className = 'loop-creator-btn';
+    saveBtn.textContent = 'save';
+    saveBtn.addEventListener('click', () => saveLoopFromCreator(input.value));
+    row.appendChild(saveBtn);
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'loop-creator-cancel-btn';
+    cancelBtn.textContent = 'cancel';
+    cancelBtn.addEventListener('click', resetLoopCreator);
+    row.appendChild(cancelBtn);
+
+    loopCreator.appendChild(row);
+    input.focus();
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter') saveBtn.click();
+    });
+    return;
+  }
+}
+
+function handleMarkClick() {
+  if (!playerCanCaptureTime()) {
+    resetLoopCreator();
+    return;
+  }
+  const t = ytPlayer.getCurrentTime();
+
+  if (loopCreationState === 'marking-start') {
+    pendingLoopStart = t;
+    loopCreationState = 'marking-end';
+    renderLoopCreator();
+    return;
+  }
+
+  if (loopCreationState === 'marking-end') {
+    if (t <= pendingLoopStart) {
+      showLoopCreatorError('The end point must be after the start point — try again.');
+      return;
+    }
+    pendingLoopEnd = t;
+    loopCreationState = 'naming';
+    renderLoopCreator();
+  }
+}
+
+function showLoopCreatorError(message) {
+  let err = loopCreator.querySelector('.loop-creator-error');
+  if (!err) {
+    err = document.createElement('p');
+    err.className = 'loop-creator-error';
+    loopCreator.appendChild(err);
+  }
+  err.textContent = message;
+}
+
+function resetLoopCreator() {
+  loopCreationState = 'idle';
+  pendingLoopStart = null;
+  pendingLoopEnd = null;
+  renderLoopCreator();
+}
+
+async function saveLoopFromCreator(rawName) {
+  const name = rawName.trim();
+  if (!name) {
+    showLoopCreatorError('Give the loop a name before saving.');
+    return;
+  }
+  if (!currentVideoId) return;
+
+  try {
+    let loop;
+    if (MOCK) {
+      loop = { id: `mockloop-${Date.now()}`, name, start: pendingLoopStart, end: pendingLoopEnd, created_at: new Date().toISOString() };
+    } else {
+      const res = await fetch(`${API}/loops`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ video_id: currentVideoId, name, start: pendingLoopStart, end: pendingLoopEnd }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }));
+        showLoopCreatorError(err.detail || 'Could not save loop.');
+        return;
+      }
+      ({ loop } = await res.json());
+    }
+    currentLoops.push(loop);
+    currentLoops.sort((a, b) => a.start - b.start);
+    resetLoopCreator();
+    renderLoopList();
+  } catch (err) {
+    showLoopCreatorError('Could not save loop: ' + err.message);
+  }
+}
+
+function renderLoopList() {
+  loopList.innerHTML = '';
+
+  currentLoops.forEach(loop => {
+    const li = document.createElement('li');
+    li.className = 'loop-item';
+
+    const playBtn = document.createElement('button');
+    playBtn.type = 'button';
+    playBtn.className = 'loop-item-play';
+
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'loop-item-name';
+    nameSpan.textContent = loop.name;
+
+    const rangeSpan = document.createElement('span');
+    rangeSpan.className = 'loop-item-range';
+    rangeSpan.textContent = formatRange(loop.start, loop.end);
+
+    playBtn.appendChild(nameSpan);
+    playBtn.appendChild(rangeSpan);
+    playBtn.addEventListener('click', () => seekAndLoop({ start: loop.start, end: loop.end }, playBtn));
+    li.appendChild(playBtn);
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button';
+    deleteBtn.className = 'loop-item-delete';
+    deleteBtn.setAttribute('aria-label', `Delete loop "${loop.name}"`);
+    deleteBtn.textContent = '×';
+    deleteBtn.addEventListener('click', () => deleteLoopItem(loop, li, playBtn));
+    li.appendChild(deleteBtn);
+
+    loopList.appendChild(li);
+  });
+}
+
+async function deleteLoopItem(loop, liEl, playBtnEl) {
+  if (!currentVideoId) return;
+  if (!MOCK) {
+    try {
+      const res = await fetch(`${API}/loops/${currentVideoId}/${loop.id}`, { method: 'DELETE' });
+      if (!res.ok && res.status !== 404) {
+        console.warn('Failed to delete loop', loop.id, res.status);
+        return;
+      }
+    } catch (err) {
+      console.warn('Failed to delete loop', err.message);
+      return;
+    }
+  }
+  if (activeChip === playBtnEl) stopLoop();
+  currentLoops = currentLoops.filter(l => l.id !== loop.id);
+  liEl.remove();
+}
+
+async function loadLoopsForVideo(videoId) {
+  currentLoops = [];
+  resetLoopCreator();
+  if (!videoId) {
+    renderLoopList();
+    return;
+  }
+  try {
+    if (MOCK) {
+      currentLoops = (MOCK_DATA.loops && MOCK_DATA.loops[videoId]) || [];
+    } else {
+      const res = await fetch(`${API}/loops/${videoId}`);
+      if (res.ok) {
+        const data = await res.json();
+        currentLoops = data.loops || [];
+      }
+    }
+  } catch (err) {
+    // Loops are a convenience feature — fail silently rather than
+    // interrupting the rest of the results from rendering.
+  }
+  renderLoopList();
+}
+
 // ── render results ────────────────────────────────────────────────────────────
 
 function renderResults(recommendations, scores, videoId) {
@@ -346,6 +616,14 @@ function renderResults(recommendations, scores, videoId) {
     loadPlayerVideo(videoId);
   } else {
     playerWrap.classList.remove('active');
+  }
+
+  // Custom loops
+  if (videoId) {
+    loopsSection.classList.add('active');
+    loadLoopsForVideo(videoId);
+  } else {
+    loopsSection.classList.remove('active');
   }
 
   // Recommendations list
