@@ -12,10 +12,11 @@ import os
 import sys
 
 from backend.downloader import download_audio, list_downloads
-from backend.transcriber import transcribe
+from backend.transcriber import transcribe, warm_up
 from backend.analyzer import analyze
 from backend.recommender import recommend
 from backend.loops import list_loops, add_loop, delete_loop
+from backend import analysis_cache
 
 
 app = FastAPI()
@@ -34,8 +35,6 @@ app.add_middleware(
     allow_headers=["Content-Type"],
 )
 
-# Resolve paths relative to this file so they work after PyInstaller bundling
-# otherwise fall back to the project root relative to this file.
 if getattr(sys, "frozen", False):
     BASE_DIR = sys._MEIPASS
 else:
@@ -44,8 +43,12 @@ else:
 TEMPLATES_DIR = os.path.join(BASE_DIR, "frontend", "templates")
 STATIC_DIR    = os.path.join(BASE_DIR, "frontend", "static")
 
-# Serve frontend/static/ at /static
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+# Set once the basic-pitch model has finished loading in the background.
+# Exposed via /health so the frontend can show a "warming up" state
+# instead of letting the first real /transcribe call eat the load cost.
+_model_ready = threading.Event()
 
 
 # ── root ───────────────────────────────────────────────────────────────────────
@@ -57,7 +60,7 @@ def root():
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    return {"status": "ok", "model_ready": _model_ready.is_set()}
 
 
 # ── request models ─────────────────────────────────────────────────────────────
@@ -70,9 +73,11 @@ class TranscribeRequest(BaseModel):
 
 class AnalyzeRequest(BaseModel):
     notes: list[dict]
+    video_id: str | None = None  # optional: enables score caching
 
 class RecommendRequest(BaseModel):
     scores: dict[str, dict]
+    video_id: str | None = None  # optional: enables recommendation caching
 
 class CreateLoopRequest(BaseModel):
     video_id: str
@@ -89,6 +94,21 @@ def history():
         return {"history": list_downloads()}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/analysis/{video_id}")
+def get_cached_analysis(video_id: str):
+    """
+    Full cached pipeline result for a video, for instant redisplay when
+    reopening something from history instead of re-running
+    transcribe/analyze/recommend from scratch. Any stage not yet cached
+    (or invalidated because the wav changed) comes back null — the
+    frontend falls back to (re-)running that stage normally.
+    """
+    cached = analysis_cache.get_cached(video_id)
+    if cached is None:
+        return {"notes": None, "scores": None, "recommendations": None}
+    return cached
 
 
 @app.get("/loops/{video_id}")
@@ -136,9 +156,16 @@ def download(req: DownloadRequest):
 
 @app.post("/transcribe")
 def transcribe_audio(req: TranscribeRequest):
+    video_id = os.path.splitext(os.path.basename(req.wav_path))[0]
+
+    cached = analysis_cache.get_cached(video_id)
+    if cached and cached.get("notes") is not None:
+        return {"notes": cached["notes"], "cached": True}
+
     try:
         notes = transcribe(req.wav_path)
-        return {"notes": notes}
+        analysis_cache.save_notes(video_id, notes)
+        return {"notes": notes, "cached": False}
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except RuntimeError as e:
@@ -151,6 +178,8 @@ def transcribe_audio(req: TranscribeRequest):
 def analyze_notes(req: AnalyzeRequest):
     try:
         scores = analyze(req.notes)
+        if req.video_id:
+            analysis_cache.save_scores(req.video_id, scores)
         return {"scores": scores}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -160,6 +189,8 @@ def analyze_notes(req: AnalyzeRequest):
 def get_recommendations(req: RecommendRequest):
     try:
         recs = recommend(req.scores)
+        if req.video_id:
+            analysis_cache.save_recommendations(req.video_id, recs)
         return {"recommendations": recs}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -173,14 +204,6 @@ _ALLOWED_EXTERNAL_HOSTS = {
 
 
 class Api:
-    """
-    Exposed to the frontend as `pywebview.api.*`. The embedded WebKitGTK
-    view often can't play YouTube's embedded player (missing codec/DRM
-    support), even when the YouTube iframe itself loads without raising a
-    JS API error — so the reliable fix is opening the video in the user's
-    actual system browser instead, which has real codec support.
-    """
-
     def open_external(self, url: str) -> bool:
         try:
             host = (urlparse(url).hostname or "").lower()
@@ -195,9 +218,20 @@ def start_server():
     uvicorn.run(app, host="127.0.0.1", port=PORT, log_level="warning")
 
 
+def _warm_up_model():
+    try:
+        warm_up()
+    finally:
+        _model_ready.set()
+
+
 def main():
     server_thread = threading.Thread(target=start_server, daemon=True)
     server_thread.start()
+
+    # Load the basic-pitch model in the background while the window opens,
+    # instead of paying that cost on the first /transcribe call.
+    threading.Thread(target=_warm_up_model, daemon=True).start()
 
     webview.create_window(
         title="MIDI Analyzer",
