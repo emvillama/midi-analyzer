@@ -70,6 +70,11 @@ const playerOpenBtn   = document.getElementById('player-open-btn');
 const loopsSection = document.getElementById('loops-section');
 const loopCreator  = document.getElementById('loop-creator');
 const loopList     = document.getElementById('loop-list');
+const tutorialSection    = document.getElementById('tutorial-section');
+const tutorialCanvas     = document.getElementById('tutorial-canvas');
+const tutorialAudio      = document.getElementById('tutorial-audio');
+const tutorialSpeedInput = document.getElementById('tutorial-speed');
+const tutorialSpeedValue = document.getElementById('tutorial-speed-value');
 
 const steps = {
   download:   document.getElementById('step-download'),
@@ -112,6 +117,7 @@ function reset() {
   currentLoops = [];
   loopList.innerHTML = '';
   resetLoopCreator();
+  teardownTutorial();
   currentVideoId = null;
   lastSeekSeconds = null;
   updatePlayerOpenBtnLabel();
@@ -348,6 +354,58 @@ function seekAndLoop(section, chipEl) {
     }
   }, 300);
 }
+
+// ── visual tutorial (falling notes + keyboard highlighting) ────────────────
+//
+// Unlike the embedded YouTube player above, this drives playback from the
+// app's own cached audio (served by the backend's /audio/{video_id}
+// endpoint), so it doesn't depend on WebKitGTK's YouTube codec/DRM support
+// — it just works, including in the packaged Windows build.
+
+let pianoRoll = null;
+
+function setupTutorial(videoId, notes) {
+  if (!videoId || !notes || notes.length === 0) {
+    teardownTutorial();
+    return;
+  }
+
+  tutorialSection.classList.add('active');
+
+  if (pianoRoll) {
+    pianoRoll.destroy();
+    pianoRoll = null;
+  }
+
+  // In MOCK mode there's no backend to stream audio from — the falling
+  // notes still render, just without a moving playhead.
+  if (!MOCK) {
+    tutorialAudio.pause();
+    tutorialAudio.src = `${API}/audio/${videoId}`;
+    tutorialAudio.load();
+  }
+  tutorialAudio.playbackRate = parseFloat(tutorialSpeedInput.value) || 1;
+
+  pianoRoll = new PianoRoll(tutorialCanvas, tutorialAudio, notes, { lookaheadSeconds: 4 });
+  pianoRoll.start();
+}
+
+function teardownTutorial() {
+  tutorialSection.classList.remove('active');
+  if (pianoRoll) {
+    pianoRoll.destroy();
+    pianoRoll = null;
+  }
+  tutorialAudio.pause();
+  tutorialAudio.removeAttribute('src');
+  tutorialAudio.load();
+}
+
+tutorialSpeedInput.addEventListener('input', () => {
+  const rate = parseFloat(tutorialSpeedInput.value);
+  tutorialAudio.playbackRate = rate;
+  tutorialSpeedValue.textContent = `${rate.toFixed(2)}x`;
+});
 
 // ── custom loops (user-created, named, saved across sessions) ──────────────
 
@@ -606,7 +664,7 @@ async function loadLoopsForVideo(videoId) {
 
 // ── render results ────────────────────────────────────────────────────────────
 
-function renderResults(recommendations, scores, videoId) {
+function renderResults(recommendations, scores, videoId, notes) {
   recList.innerHTML = '';
   scoresGrid.innerHTML = '';
 
@@ -617,6 +675,9 @@ function renderResults(recommendations, scores, videoId) {
   } else {
     playerWrap.classList.remove('active');
   }
+
+  // Visual tutorial (falling notes, synced to in-app audio playback)
+  setupTutorial(videoId, notes);
 
   // Custom loops
   if (videoId) {
@@ -811,7 +872,7 @@ async function runPipeline({ url, wavPath, title } = {}) {
 
     // Render
     const videoId = videoIdFromWavPath(resolvedWavPath);
-    renderResults(recommendations, scores, videoId);
+    renderResults(recommendations, scores, videoId, notes);
 
     // Refresh history — a fresh download adds a new entry, a revisit bumps last_used_at
     loadHistory();
