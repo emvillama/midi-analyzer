@@ -11,7 +11,7 @@ from pydantic import BaseModel
 import os
 import sys
 
-from backend.downloader import download_audio, list_downloads
+from backend.downloader import download_audio, list_downloads, DOWNLOAD_DIR, _YOUTUBE_ID_RE
 from backend.transcriber import transcribe, warm_up
 from backend.analyzer import analyze
 from backend.recommender import recommend
@@ -109,6 +109,36 @@ def get_cached_analysis(video_id: str):
     if cached is None:
         return {"notes": None, "scores": None, "recommendations": None}
     return cached
+
+
+@app.get("/audio/{video_id}")
+def get_audio(video_id: str):
+    """
+    Streams the cached wav for a video so the frontend can play it in-app
+    (e.g. for the piano-roll tutorial view), instead of only being able to
+    open YouTube externally.
+
+    video_id is validated against YouTube's 11-char ID shape (same
+    validator downloader.py uses) and the resolved path is re-checked to
+    still live inside DOWNLOAD_DIR before being served, since video_id
+    ultimately comes from the URL path.
+    """
+    if not _YOUTUBE_ID_RE.match(video_id):
+        raise HTTPException(status_code=400, detail="Invalid video ID.")
+
+    wav_path = os.path.abspath(os.path.join(DOWNLOAD_DIR, f"{video_id}.wav"))
+    download_dir_abs = os.path.abspath(DOWNLOAD_DIR)
+    if not wav_path.startswith(download_dir_abs + os.sep):
+        raise HTTPException(status_code=400, detail="Invalid video ID.")
+
+    if not os.path.isfile(wav_path) or os.path.getsize(wav_path) == 0:
+        raise HTTPException(status_code=404, detail="Audio not found for this video.")
+
+    return FileResponse(
+        wav_path,
+        media_type="audio/wav",
+        headers={"Content-Disposition": f'inline; filename="{video_id}.wav"'},
+    )
 
 
 @app.get("/loops/{video_id}")
