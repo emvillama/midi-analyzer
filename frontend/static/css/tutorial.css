@@ -1,0 +1,46 @@
+/* tutorial.css — visual tutorial (html-midi-player) view */
+
+.tutorial-section {
+  display: none;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin: 1rem 0;
+}
+
+.tutorial-section.active {
+  display: flex;
+}
+
+.tutorial-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.tutorial-label {
+  font-size: 0.8rem;
+  letter-spacing: 0.02em;
+  color: var(--muted, #8a8f98);
+}
+
+/* The visualizer draws its own light background (magenta's default
+   styling isn't deeply CSS-themeable) — frame it as a distinct "screen"
+   panel rather than fighting it to match the dark app chrome. Real piano
+   apps do this too (a bright score/roll panel inside a dark shell). */
+#tutorial-visualizer {
+  display: block;
+  width: 100%;
+  max-height: 320px;
+  overflow: auto;
+  border-radius: 6px;
+  border: 1px solid var(--border, #2a2d34);
+}
+
+#tutorial-player {
+  width: 100%;
+}
+
+#tutorial-player::part(control-panel) {
+  border-radius: 6px;
+  background: var(--panel, #1c1e24);
+}
