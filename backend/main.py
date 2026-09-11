@@ -111,26 +111,34 @@ def get_cached_analysis(video_id: str):
     return cached
 
 
-@app.get("/audio/{video_id}")
-def get_audio(video_id: str):
+def _resolve_media_path(video_id: str, ext: str) -> str:
     """
-    Streams the cached wav for a video so the frontend can play it in-app
-    (e.g. for the piano-roll tutorial view), instead of only being able to
-    open YouTube externally.
+    Shared validation for serving a per-video file out of DOWNLOAD_DIR.
 
     video_id is validated against YouTube's 11-char ID shape (same
     validator downloader.py uses) and the resolved path is re-checked to
     still live inside DOWNLOAD_DIR before being served, since video_id
-    ultimately comes from the URL path.
+    ultimately comes from the URL path — two independent checks against
+    path traversal.
     """
     if not _YOUTUBE_ID_RE.match(video_id):
         raise HTTPException(status_code=400, detail="Invalid video ID.")
 
-    wav_path = os.path.abspath(os.path.join(DOWNLOAD_DIR, f"{video_id}.wav"))
+    path = os.path.abspath(os.path.join(DOWNLOAD_DIR, f"{video_id}.{ext}"))
     download_dir_abs = os.path.abspath(DOWNLOAD_DIR)
-    if not wav_path.startswith(download_dir_abs + os.sep):
+    if not path.startswith(download_dir_abs + os.sep):
         raise HTTPException(status_code=400, detail="Invalid video ID.")
 
+    return path
+
+
+@app.get("/audio/{video_id}")
+def get_audio(video_id: str):
+    """
+    Streams the cached wav for a video so the frontend can play it in-app,
+    instead of only being able to open YouTube externally.
+    """
+    wav_path = _resolve_media_path(video_id, "wav")
     if not os.path.isfile(wav_path) or os.path.getsize(wav_path) == 0:
         raise HTTPException(status_code=404, detail="Audio not found for this video.")
 
@@ -138,6 +146,26 @@ def get_audio(video_id: str):
         wav_path,
         media_type="audio/wav",
         headers={"Content-Disposition": f'inline; filename="{video_id}.wav"'},
+    )
+
+
+@app.get("/midi/{video_id}")
+def get_midi(video_id: str):
+    """
+    Streams the transcribed .mid file for a video, written by transcriber.py
+    alongside the wav. Powers the visual tutorial view (html-midi-player's
+    waterfall visualizer on the frontend). 404s if /transcribe hasn't run
+    for this video yet, or the write failed (non-fatal there — the rest of
+    the pipeline still works, this endpoint just won't have anything yet).
+    """
+    midi_path = _resolve_media_path(video_id, "mid")
+    if not os.path.isfile(midi_path) or os.path.getsize(midi_path) == 0:
+        raise HTTPException(status_code=404, detail="MIDI not found for this video.")
+
+    return FileResponse(
+        midi_path,
+        media_type="audio/midi",
+        headers={"Content-Disposition": f'inline; filename="{video_id}.mid"'},
     )
 
 
