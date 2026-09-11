@@ -71,10 +71,8 @@ const loopsSection = document.getElementById('loops-section');
 const loopCreator  = document.getElementById('loop-creator');
 const loopList     = document.getElementById('loop-list');
 const tutorialSection    = document.getElementById('tutorial-section');
-const tutorialCanvas     = document.getElementById('tutorial-canvas');
-const tutorialAudio      = document.getElementById('tutorial-audio');
-const tutorialSpeedInput = document.getElementById('tutorial-speed');
-const tutorialSpeedValue = document.getElementById('tutorial-speed-value');
+const tutorialPlayer     = document.getElementById('tutorial-player');
+const tutorialVisualizer = document.getElementById('tutorial-visualizer');
 
 const steps = {
   download:   document.getElementById('step-download'),
@@ -355,14 +353,15 @@ function seekAndLoop(section, chipEl) {
   }, 300);
 }
 
-// ── visual tutorial (falling notes + keyboard highlighting) ────────────────
+// ── visual tutorial (falling notes, via html-midi-player) ──────────────────
 //
-// Unlike the embedded YouTube player above, this drives playback from the
-// app's own cached audio (served by the backend's /audio/{video_id}
-// endpoint), so it doesn't depend on WebKitGTK's YouTube codec/DRM support
-// — it just works, including in the packaged Windows build.
-
-let pianoRoll = null;
+// <midi-player> loads the transcribed .mid file (served by the backend's
+// /midi/{video_id} endpoint) and drives <midi-visualizer type="waterfall">
+// automatically — no custom animation-loop or sync code needed. Playback
+// is a synthesized rendition via the player's built-in soundfont, not the
+// original recording; that's what keeps sound and falling notes perfectly
+// in sync for free. (The embedded YouTube player above, and "watch on
+// youtube", still give access to the real recording.)
 
 function setupTutorial(videoId, notes) {
   if (!videoId || !notes || notes.length === 0) {
@@ -372,40 +371,18 @@ function setupTutorial(videoId, notes) {
 
   tutorialSection.classList.add('active');
 
-  if (pianoRoll) {
-    pianoRoll.destroy();
-    pianoRoll = null;
-  }
-
-  // In MOCK mode there's no backend to stream audio from — the falling
-  // notes still render, just without a moving playhead.
+  // In MOCK mode there's no backend to stream a .mid file from.
   if (!MOCK) {
-    tutorialAudio.pause();
-    tutorialAudio.src = `${API}/audio/${videoId}`;
-    tutorialAudio.load();
+    tutorialPlayer.stop();
+    tutorialPlayer.src = `${API}/midi/${videoId}`;
   }
-  tutorialAudio.playbackRate = parseFloat(tutorialSpeedInput.value) || 1;
-
-  pianoRoll = new PianoRoll(tutorialCanvas, tutorialAudio, notes, { lookaheadSeconds: 4 });
-  pianoRoll.start();
 }
 
 function teardownTutorial() {
   tutorialSection.classList.remove('active');
-  if (pianoRoll) {
-    pianoRoll.destroy();
-    pianoRoll = null;
-  }
-  tutorialAudio.pause();
-  tutorialAudio.removeAttribute('src');
-  tutorialAudio.load();
+  if (tutorialPlayer.stop) tutorialPlayer.stop();
+  tutorialPlayer.removeAttribute('src');
 }
-
-tutorialSpeedInput.addEventListener('input', () => {
-  const rate = parseFloat(tutorialSpeedInput.value);
-  tutorialAudio.playbackRate = rate;
-  tutorialSpeedValue.textContent = `${rate.toFixed(2)}x`;
-});
 
 // ── custom loops (user-created, named, saved across sessions) ──────────────
 
